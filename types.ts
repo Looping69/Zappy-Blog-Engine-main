@@ -39,6 +39,16 @@ export interface BlogState {
   totalTokens: number;
 }
 
+export interface BlogHistoryItem {
+  id: string;
+  keyword: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  tokenCount: number;
+  blogStructure: string;
+}
+
 export interface SanityConfig {
   projectId: string;
   dataset: string;
@@ -53,6 +63,7 @@ export interface AirtableConfig {
 
 // Blog Structure Templates
 export type BlogStructure =
+  | 'schema-v12'
   | 'clinical-authority'
   | 'listicle'
   | 'how-to-guide'
@@ -70,6 +81,27 @@ export interface BlogStructureOption {
 }
 
 export const BLOG_STRUCTURES: BlogStructureOption[] = [
+  {
+    id: 'schema-v12',
+    name: 'Zappyhealth v1.2',
+    description: 'Production schema with TL;DR, strict authority, JSON output',
+    icon: '✅',
+    template: `Schema v1.2 - Production Standard
+
+• SEO Title (40-70 chars)
+• Meta Description (140-160 chars)
+• Introduction (300-700 chars)
+• TL;DR (3-5 bullet conclusions)
+• Overview
+• Mechanism
+• Evidence Summary OR Provider Guidance
+• Common Concerns (3-5 Q&A)
+• Supportive Actions (2-5 items)
+• Topic-Specific Section (optional)
+• Key Takeaway
+• FAQ (3-5 Q&A)
+• Disclaimer`
+  },
   {
     id: 'clinical-authority',
     name: 'Clinical Authority',
@@ -191,7 +223,7 @@ export interface ContentConfig {
 }
 
 export const DEFAULT_CONTENT_CONFIG: ContentConfig = {
-  blogStructure: 'clinical-authority',
+  blogStructure: 'schema-v12',
   customStructureInstructions: ''
 };
 

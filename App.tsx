@@ -5,19 +5,18 @@ import {
   AgentId,
   AGENTS,
   AgentResponse,
-  SanityConfig,
-  AirtableConfig,
   AgentConfigs,
   getDefaultAgentConfigs,
   ContentConfig,
-  DEFAULT_CONTENT_CONFIG
+  DEFAULT_CONTENT_CONFIG,
+  BlogHistoryItem
 } from './types';
 import { geminiService } from './services/geminiService';
 import { publishToSanity, publishToAirtable } from './services/integrationService';
 import AgentCard from './components/AgentCard';
 import MarkdownRenderer from './components/MarkdownRenderer';
-import PublishModal from './components/PublishModal';
 import SettingsModal from './components/SettingsModal';
+import BlogHistory from './components/BlogHistory';
 
 const App: React.FC = () => {
   const [state, setState] = useState<BlogState>({
@@ -31,16 +30,6 @@ const App: React.FC = () => {
   });
 
   // Settings State with Persistence
-  const [sanityConfig, setSanityConfig] = useState<SanityConfig>(() => {
-    const saved = localStorage.getItem('zappy_sanity_config');
-    return saved ? JSON.parse(saved) : { projectId: '', dataset: 'production', token: '' };
-  });
-
-  const [airtableConfig, setAirtableConfig] = useState<AirtableConfig>(() => {
-    const saved = localStorage.getItem('zappy_airtable_config');
-    return saved ? JSON.parse(saved) : { apiKey: '', baseId: '', tableName: 'Content' };
-  });
-
   const [agentConfigs, setAgentConfigs] = useState<AgentConfigs>(() => {
     const saved = localStorage.getItem('zappy_agent_configs');
     return saved ? JSON.parse(saved) : getDefaultAgentConfigs();
@@ -51,8 +40,13 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : DEFAULT_CONTENT_CONFIG;
   });
 
-  const [publishModal, setPublishModal] = useState<'sanity' | 'airtable' | null>(null);
+  const [blogHistory, setBlogHistory] = useState<BlogHistoryItem[]>(() => {
+    const saved = localStorage.getItem('zappy_blog_history');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -65,20 +59,16 @@ const App: React.FC = () => {
 
   // Persist settings
   useEffect(() => {
-    localStorage.setItem('zappy_sanity_config', JSON.stringify(sanityConfig));
-  }, [sanityConfig]);
-
-  useEffect(() => {
-    localStorage.setItem('zappy_airtable_config', JSON.stringify(airtableConfig));
-  }, [airtableConfig]);
-
-  useEffect(() => {
     localStorage.setItem('zappy_agent_configs', JSON.stringify(agentConfigs));
   }, [agentConfigs]);
 
   useEffect(() => {
     localStorage.setItem('zappy_content_config', JSON.stringify(contentConfig));
   }, [contentConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('zappy_blog_history', JSON.stringify(blogHistory));
+  }, [blogHistory]);
 
   // Auto-dismiss notification
   useEffect(() => {
@@ -186,6 +176,19 @@ const App: React.FC = () => {
         totalTokens: prev.totalTokens + final.usage.totalTokens
       }));
 
+      // Save to blog history
+      const title = final.content.match(/^# (.*$)/m)?.[1] || `Blog: ${keyword}`;
+      const newHistoryItem: BlogHistoryItem = {
+        id: Date.now().toString(),
+        keyword,
+        title,
+        content: final.content,
+        createdAt: Date.now(),
+        tokenCount: state.totalTokens + final.usage.totalTokens,
+        blogStructure: contentConfig.blogStructure
+      };
+      setBlogHistory(prev => [newHistoryItem, ...prev]);
+
     } catch (err: any) {
       setState(prev => ({ ...prev, error: err.message || "System failure." }));
     } finally {
@@ -209,16 +212,20 @@ const App: React.FC = () => {
     return match ? match[1] : 'Zappy Medical Post';
   };
 
-  const handlePublish = async (config: any) => {
+  const handlePublish = async (type: 'sanity' | 'airtable') => {
     if (!state.finalPost) return;
     const title = extractTitle(state.finalPost);
 
-    if (publishModal === 'sanity') {
-      await publishToSanity(config, title, state.finalPost);
-      setNotification({ message: 'Successfully published to Sanity CMS!', type: 'success' });
-    } else if (publishModal === 'airtable') {
-      await publishToAirtable(config, title, state.finalPost);
-      setNotification({ message: 'Successfully sent to Airtable Base!', type: 'success' });
+    try {
+      if (type === 'sanity') {
+        await publishToSanity(title, state.finalPost);
+        setNotification({ message: 'Successfully published to Sanity CMS!', type: 'success' });
+      } else if (type === 'airtable') {
+        await publishToAirtable(title, state.finalPost);
+        setNotification({ message: 'Successfully sent to Airtable Base!', type: 'success' });
+      }
+    } catch (err: any) {
+      setNotification({ message: err.message || 'Publish failed', type: 'error' });
     }
   };
 
@@ -312,6 +319,19 @@ const App: React.FC = () => {
             <div className="flex-1 text-left">
               <p className="text-[10px] font-bold text-slate-900">Settings</p>
               <p className="text-[9px] text-slate-400 font-medium">Integrations & Config</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setIsHistoryOpen(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all group"
+          >
+            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-500 group-hover:text-purple-700 transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-[10px] font-bold text-slate-900">History</p>
+              <p className="text-[9px] text-slate-400 font-medium">{blogHistory.length} articles</p>
             </div>
           </button>
         </div>
@@ -429,13 +449,13 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex gap-3">
                       <button
-                        onClick={() => setPublishModal('sanity')}
+                        onClick={() => handlePublish('sanity')}
                         className="flex items-center gap-2 px-4 py-2 bg-[#F03E2F]/10 text-[#F03E2F] rounded-xl hover:bg-[#F03E2F] hover:text-white transition-colors text-xs font-bold"
                       >
                         Publish to Sanity
                       </button>
                       <button
-                        onClick={() => setPublishModal('airtable')}
+                        onClick={() => handlePublish('airtable')}
                         className="flex items-center gap-2 px-4 py-2 bg-[#FCB400]/10 text-[#e6a200] rounded-xl hover:bg-[#FCB400] hover:text-white transition-colors text-xs font-bold"
                       >
                         Publish to Airtable
@@ -467,31 +487,40 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <PublishModal
-        isOpen={!!publishModal}
-        type={publishModal}
-        onClose={() => setPublishModal(null)}
-        onPublish={handlePublish}
-        initialSanityConfig={sanityConfig}
-        initialAirtableConfig={airtableConfig}
-      />
-
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        savedSanityConfig={sanityConfig}
-        savedAirtableConfig={airtableConfig}
         savedAgentConfigs={agentConfigs}
         savedContentConfig={contentConfig}
-        onSave={(newSanity, newAirtable, newAgentConfigs, newContentConfig) => {
-          setSanityConfig(newSanity);
-          setAirtableConfig(newAirtable);
+        onSave={(newAgentConfigs, newContentConfig) => {
           setAgentConfigs(newAgentConfigs);
           setContentConfig(newContentConfig);
           setNotification({ message: 'Settings saved successfully', type: 'success' });
           setIsSettingsOpen(false);
         }}
       />
+
+      {isHistoryOpen && (
+        <BlogHistory
+          history={blogHistory}
+          onSelectBlog={(blog) => {
+            setState(prev => ({
+              ...prev,
+              keyword: blog.keyword,
+              finalPost: blog.content,
+              history: [],
+              error: null
+            }));
+            setIsHistoryOpen(false);
+            setNotification({ message: `Loaded "${blog.title}"`, type: 'success' });
+          }}
+          onDeleteBlog={(id) => {
+            setBlogHistory(prev => prev.filter(b => b.id !== id));
+            setNotification({ message: 'Article deleted', type: 'success' });
+          }}
+          onClose={() => setIsHistoryOpen(false)}
+        />
+      )}
 
       <style>{`
         @keyframes shimmer {

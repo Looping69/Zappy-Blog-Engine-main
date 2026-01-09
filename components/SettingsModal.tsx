@@ -1,42 +1,34 @@
 
 import React, { useState, useEffect } from 'react';
-import { SanityConfig, AirtableConfig, AgentConfigs, AgentConfig, AgentId, DEFAULT_AGENT_CONFIG, ContentConfig, DEFAULT_CONTENT_CONFIG } from '../types';
+import { AgentConfigs, AgentConfig, AgentId, DEFAULT_AGENT_CONFIG, ContentConfig, DEFAULT_CONTENT_CONFIG } from '../types';
 import AgentSettingsTab from './AgentSettingsTab';
 import ContentSettingsTab from './ContentSettingsTab';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  savedSanityConfig: SanityConfig;
-  savedAirtableConfig: AirtableConfig;
   savedAgentConfigs: AgentConfigs;
   savedContentConfig: ContentConfig;
-  onSave: (sanity: SanityConfig, airtable: AirtableConfig, agents: AgentConfigs, content: ContentConfig) => void;
+  onSave: (agents: AgentConfigs, content: ContentConfig) => void;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
-  savedSanityConfig,
-  savedAirtableConfig,
   savedAgentConfigs,
   savedContentConfig,
   onSave
 }) => {
-  const [activeTab, setActiveTab] = useState<'sanity' | 'airtable' | 'agents' | 'content'>('sanity');
-  const [sanity, setSanity] = useState<SanityConfig>(savedSanityConfig);
-  const [airtable, setAirtable] = useState<AirtableConfig>(savedAirtableConfig);
+  const [activeTab, setActiveTab] = useState<'agents' | 'content'>('agents');
   const [agentConfigs, setAgentConfigs] = useState<AgentConfigs>(savedAgentConfigs);
   const [contentConfig, setContentConfig] = useState<ContentConfig>(savedContentConfig);
 
   useEffect(() => {
     if (isOpen) {
-      setSanity(savedSanityConfig);
-      setAirtable(savedAirtableConfig);
       setAgentConfigs(savedAgentConfigs);
       setContentConfig(savedContentConfig);
     }
-  }, [isOpen, savedSanityConfig, savedAirtableConfig, savedAgentConfigs, savedContentConfig]);
+  }, [isOpen, savedAgentConfigs, savedContentConfig]);
 
   const handleAgentConfigChange = (agentId: AgentId, config: AgentConfig) => {
     setAgentConfigs(prev => ({ ...prev, [agentId]: config }));
@@ -58,22 +50,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           <h3 className="text-lg font-black text-slate-900 mb-6">Settings</h3>
           <div className="space-y-2 flex-1">
             <button
-              onClick={() => setActiveTab('sanity')}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3
-               ${activeTab === 'sanity' ? 'bg-white shadow-sm text-slate-900 ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
-            >
-              <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs ${activeTab === 'sanity' ? 'bg-[#F03E2F] text-white' : 'bg-slate-200'}`}>S</div>
-              Sanity CMS
-            </button>
-            <button
-              onClick={() => setActiveTab('airtable')}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3
-               ${activeTab === 'airtable' ? 'bg-white shadow-sm text-slate-900 ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
-            >
-              <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs ${activeTab === 'airtable' ? 'bg-[#FCB400] text-white' : 'bg-slate-200'}`}>A</div>
-              Airtable
-            </button>
-            <button
               onClick={() => setActiveTab('agents')}
               className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3
                ${activeTab === 'agents' ? 'bg-white shadow-sm text-slate-900 ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
@@ -90,22 +66,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               Blog Structure
             </button>
           </div>
-          <button onClick={onClose} className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">Close</button>
+
+          {/* Integration Status */}
+          <div className="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+            <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-2">Integrations</p>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                <span className="text-[10px] text-emerald-600 font-medium">Sanity CMS</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                <span className="text-[10px] text-emerald-600 font-medium">Airtable</span>
+              </div>
+            </div>
+            <p className="text-[9px] text-emerald-500 mt-2">Configured via .env</p>
+          </div>
+
+          <button onClick={onClose} className="mt-4 text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">Close</button>
         </div>
 
         {/* Content */}
         <div className="flex-1 p-8 overflow-y-auto">
           <h2 className="text-xl font-bold text-slate-900 mb-2">
-            {activeTab === 'sanity' ? 'Sanity Configuration' : activeTab === 'airtable' ? 'Airtable Configuration' : activeTab === 'agents' ? 'Agent Fine-Tuning' : 'Blog Structure'}
+            {activeTab === 'agents' ? 'Agent Fine-Tuning' : 'Blog Structure'}
           </h2>
           <p className="text-xs text-slate-500 mb-6 font-medium">
-            {activeTab === 'sanity'
-              ? 'Configure your Sanity project credentials for content publishing.'
-              : activeTab === 'airtable'
-                ? 'Setup your Airtable Base connection details.'
-                : activeTab === 'agents'
-                  ? 'Customize each agent\'s behavior, tone, and parameters.'
-                  : 'Choose how your blog posts are structured.'}
+            {activeTab === 'agents'
+              ? 'Customize each agent\'s behavior, tone, and parameters.'
+              : 'Choose how your blog posts are structured.'}
           </p>
 
           {activeTab === 'agents' ? (
@@ -114,88 +103,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               onConfigChange={handleAgentConfigChange}
               onResetAgent={handleResetAgent}
             />
-          ) : activeTab === 'content' ? (
+          ) : (
             <ContentSettingsTab
               contentConfig={contentConfig}
               onConfigChange={setContentConfig}
             />
-          ) : (
-            <div className="space-y-5">
-              {activeTab === 'sanity' ? (
-                <>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Project ID</label>
-                    <input
-                      type="text"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#F03E2F] transition-colors"
-                      value={sanity.projectId}
-                      onChange={e => setSanity({ ...sanity, projectId: e.target.value })}
-                      placeholder="e.g. 8x92nm4"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Dataset</label>
-                    <input
-                      type="text"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#F03E2F] transition-colors"
-                      value={sanity.dataset}
-                      onChange={e => setSanity({ ...sanity, dataset: e.target.value })}
-                      placeholder="production"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">API Token</label>
-                    <input
-                      type="password"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#F03E2F] transition-colors"
-                      value={sanity.token}
-                      onChange={e => setSanity({ ...sanity, token: e.target.value })}
-                      placeholder="sk..."
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Personal Access Token</label>
-                    <input
-                      type="password"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#FCB400] transition-colors"
-                      value={airtable.apiKey}
-                      onChange={e => setAirtable({ ...airtable, apiKey: e.target.value })}
-                      placeholder="pat..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Base ID</label>
-                    <input
-                      type="text"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#FCB400] transition-colors"
-                      value={airtable.baseId}
-                      onChange={e => setAirtable({ ...airtable, baseId: e.target.value })}
-                      placeholder="app..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Table Name</label>
-                    <input
-                      type="text"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#FCB400] transition-colors"
-                      value={airtable.tableName}
-                      onChange={e => setAirtable({ ...airtable, tableName: e.target.value })}
-                      placeholder="Content"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
           )}
 
           <div className="mt-8 pt-8 border-t border-slate-100 flex justify-end gap-3">
             <button
               onClick={() => {
-                setSanity(savedSanityConfig);
-                setAirtable(savedAirtableConfig);
                 setAgentConfigs(savedAgentConfigs);
                 setContentConfig(savedContentConfig);
               }}
@@ -204,7 +121,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               Reset All
             </button>
             <button
-              onClick={() => onSave(sanity, airtable, agentConfigs, contentConfig)}
+              onClick={() => onSave(agentConfigs, contentConfig)}
               className="px-8 py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl shadow-lg hover:bg-slate-800 transition-all active:scale-95"
             >
               Save Changes
@@ -217,4 +134,3 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 };
 
 export default SettingsModal;
-
