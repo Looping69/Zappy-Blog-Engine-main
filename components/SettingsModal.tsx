@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { SanityConfig, AirtableConfig, AgentConfigs, AgentConfig, AgentId, DEFAULT_AGENT_CONFIG } from '../types';
+import { SanityConfig, AirtableConfig, AgentConfigs, AgentConfig, AgentId, DEFAULT_AGENT_CONFIG, ContentConfig, DEFAULT_CONTENT_CONFIG } from '../types';
 import AgentSettingsTab from './AgentSettingsTab';
+import ContentSettingsTab from './ContentSettingsTab';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -9,7 +10,8 @@ interface SettingsModalProps {
   savedSanityConfig: SanityConfig;
   savedAirtableConfig: AirtableConfig;
   savedAgentConfigs: AgentConfigs;
-  onSave: (sanity: SanityConfig, airtable: AirtableConfig, agents: AgentConfigs) => void;
+  savedContentConfig: ContentConfig;
+  onSave: (sanity: SanityConfig, airtable: AirtableConfig, agents: AgentConfigs, content: ContentConfig) => void;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -18,20 +20,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   savedSanityConfig,
   savedAirtableConfig,
   savedAgentConfigs,
+  savedContentConfig,
   onSave
 }) => {
-  const [activeTab, setActiveTab] = useState<'sanity' | 'airtable' | 'agents'>('sanity');
+  const [activeTab, setActiveTab] = useState<'sanity' | 'airtable' | 'agents' | 'content'>('sanity');
   const [sanity, setSanity] = useState<SanityConfig>(savedSanityConfig);
   const [airtable, setAirtable] = useState<AirtableConfig>(savedAirtableConfig);
   const [agentConfigs, setAgentConfigs] = useState<AgentConfigs>(savedAgentConfigs);
+  const [contentConfig, setContentConfig] = useState<ContentConfig>(savedContentConfig);
 
   useEffect(() => {
     if (isOpen) {
       setSanity(savedSanityConfig);
       setAirtable(savedAirtableConfig);
       setAgentConfigs(savedAgentConfigs);
+      setContentConfig(savedContentConfig);
     }
-  }, [isOpen, savedSanityConfig, savedAirtableConfig, savedAgentConfigs]);
+  }, [isOpen, savedSanityConfig, savedAirtableConfig, savedAgentConfigs, savedContentConfig]);
 
   const handleAgentConfigChange = (agentId: AgentId, config: AgentConfig) => {
     setAgentConfigs(prev => ({ ...prev, [agentId]: config }));
@@ -76,6 +81,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs ${activeTab === 'agents' ? 'bg-orange-500 text-white' : 'bg-slate-200'}`}>🤖</div>
               Agent Tuning
             </button>
+            <button
+              onClick={() => setActiveTab('content')}
+              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3
+               ${activeTab === 'content' ? 'bg-white shadow-sm text-slate-900 ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-100'}`}
+            >
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs ${activeTab === 'content' ? 'bg-purple-500 text-white' : 'bg-slate-200'}`}>📝</div>
+              Blog Structure
+            </button>
           </div>
           <button onClick={onClose} className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">Close</button>
         </div>
@@ -83,14 +96,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Content */}
         <div className="flex-1 p-8 overflow-y-auto">
           <h2 className="text-xl font-bold text-slate-900 mb-2">
-            {activeTab === 'sanity' ? 'Sanity Configuration' : activeTab === 'airtable' ? 'Airtable Configuration' : 'Agent Fine-Tuning'}
+            {activeTab === 'sanity' ? 'Sanity Configuration' : activeTab === 'airtable' ? 'Airtable Configuration' : activeTab === 'agents' ? 'Agent Fine-Tuning' : 'Blog Structure'}
           </h2>
           <p className="text-xs text-slate-500 mb-6 font-medium">
             {activeTab === 'sanity'
               ? 'Configure your Sanity project credentials for content publishing.'
               : activeTab === 'airtable'
                 ? 'Setup your Airtable Base connection details.'
-                : 'Customize each agent\'s behavior, tone, and parameters.'}
+                : activeTab === 'agents'
+                  ? 'Customize each agent\'s behavior, tone, and parameters.'
+                  : 'Choose how your blog posts are structured.'}
           </p>
 
           {activeTab === 'agents' ? (
@@ -98,6 +113,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               agentConfigs={agentConfigs}
               onConfigChange={handleAgentConfigChange}
               onResetAgent={handleResetAgent}
+            />
+          ) : activeTab === 'content' ? (
+            <ContentSettingsTab
+              contentConfig={contentConfig}
+              onConfigChange={setContentConfig}
             />
           ) : (
             <div className="space-y-5">
@@ -177,13 +197,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 setSanity(savedSanityConfig);
                 setAirtable(savedAirtableConfig);
                 setAgentConfigs(savedAgentConfigs);
+                setContentConfig(savedContentConfig);
               }}
               className="px-5 py-2.5 text-slate-500 font-bold text-xs hover:bg-slate-50 rounded-xl transition-colors"
             >
               Reset All
             </button>
             <button
-              onClick={() => onSave(sanity, airtable, agentConfigs)}
+              onClick={() => onSave(sanity, airtable, agentConfigs, contentConfig)}
               className="px-8 py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl shadow-lg hover:bg-slate-800 transition-all active:scale-95"
             >
               Save Changes

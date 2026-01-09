@@ -51,6 +51,150 @@ export interface AirtableConfig {
   tableName: string;
 }
 
+// Blog Structure Templates
+export type BlogStructure =
+  | 'clinical-authority'
+  | 'listicle'
+  | 'how-to-guide'
+  | 'qa-format'
+  | 'comparison'
+  | 'case-study'
+  | 'myth-busting';
+
+export interface BlogStructureOption {
+  id: BlogStructure;
+  name: string;
+  description: string;
+  icon: string;
+  template: string;
+}
+
+export const BLOG_STRUCTURES: BlogStructureOption[] = [
+  {
+    id: 'clinical-authority',
+    name: 'Clinical Authority',
+    description: 'Professional medical article with research-backed structure',
+    icon: '🏥',
+    template: `[META DESCRIPTION]: 150-160 characters summarizing the post.
+[TITLE]: H1 Header incorporating the primary keyword.
+[INTRODUCTION]: Hook + Overview + Thesis
+[MAIN BODY]: H2/H3 subheadings with clinical explanations and evidence
+[CONCLUSION]: Key takeaways + CTA + Future outlook
+[MEDICAL DISCLAIMER]: Standard professional warning`
+  },
+  {
+    id: 'listicle',
+    name: 'Listicle',
+    description: 'Numbered list format (e.g., "7 Ways to...")',
+    icon: '📋',
+    template: `[META DESCRIPTION]: 150-160 characters with the number and benefit.
+[TITLE]: "X [Benefits/Ways/Tips] for [Topic]" format
+[INTRODUCTION]: Brief hook explaining why this list matters
+[LIST ITEMS]: Numbered H2 headers (1. First Item, 2. Second Item...)
+  - Each item: 150-300 words with actionable advice
+  - Include sub-bullets for key points
+[CONCLUSION]: Summary of top picks + CTA
+[MEDICAL DISCLAIMER]: Standard warning`
+  },
+  {
+    id: 'how-to-guide',
+    name: 'How-To Guide',
+    description: 'Step-by-step instructional format',
+    icon: '📝',
+    template: `[META DESCRIPTION]: "Learn how to [action] with this step-by-step guide"
+[TITLE]: "How to [Action]: A Complete Guide" format
+[INTRODUCTION]: What readers will learn + prerequisites
+[MATERIALS/REQUIREMENTS]: What's needed before starting (if applicable)
+[STEPS]: Numbered steps with H2 headers
+  - Step 1: [Action] - detailed instructions
+  - Step 2: [Action] - detailed instructions
+  - Include tips/warnings in callout boxes
+[TROUBLESHOOTING]: Common issues and solutions
+[CONCLUSION]: Summary + expected outcomes + CTA
+[MEDICAL DISCLAIMER]: Standard warning`
+  },
+  {
+    id: 'qa-format',
+    name: 'Q&A Format',
+    description: 'FAQ-style with questions as headers',
+    icon: '❓',
+    template: `[META DESCRIPTION]: "Get answers to common questions about [topic]"
+[TITLE]: "[Topic]: Your Questions Answered" or "FAQ: [Topic]"
+[INTRODUCTION]: Overview of why these questions matter
+[QUESTIONS]: H2 headers as questions people commonly ask
+  - What is [topic]?
+  - How does [topic] work?
+  - Who should consider [topic]?
+  - What are the risks of [topic]?
+  - When should I see a doctor about [topic]?
+[ADDITIONAL RESOURCES]: Links to related content
+[CONCLUSION]: Summary + when to seek professional help
+[MEDICAL DISCLAIMER]: Standard warning`
+  },
+  {
+    id: 'comparison',
+    name: 'Comparison',
+    description: 'Side-by-side analysis (e.g., Treatment A vs B)',
+    icon: '⚖️',
+    template: `[META DESCRIPTION]: "[Option A] vs [Option B]: Which is right for you?"
+[TITLE]: "[Option A] vs [Option B]: A Complete Comparison"
+[INTRODUCTION]: Why this comparison matters + who it's for
+[OVERVIEW]: Brief intro to both options
+[COMPARISON TABLE]: Side-by-side feature comparison
+[OPTION A DEEP DIVE]: Pros, cons, best use cases
+[OPTION B DEEP DIVE]: Pros, cons, best use cases
+[HEAD-TO-HEAD]: Direct comparison on key factors
+[VERDICT]: Recommendations based on different needs
+[CONCLUSION]: Summary + CTA
+[MEDICAL DISCLAIMER]: Standard warning`
+  },
+  {
+    id: 'case-study',
+    name: 'Case Study',
+    description: 'Problem → Solution → Results narrative',
+    icon: '📊',
+    template: `[META DESCRIPTION]: "See how [approach] helped with [problem]"
+[TITLE]: "Case Study: [Outcome] Through [Approach]"
+[INTRODUCTION]: Overview of the case and why it matters
+[BACKGROUND]: Patient/situation context (anonymized)
+[THE CHALLENGE]: Detailed problem description
+[THE APPROACH]: What was tried and why
+[THE SOLUTION]: What worked and how it was implemented
+[RESULTS]: Measurable outcomes and improvements
+[KEY TAKEAWAYS]: Lessons learned
+[CONCLUSION]: Implications for readers + CTA
+[MEDICAL DISCLAIMER]: Standard warning + note about individual variation`
+  },
+  {
+    id: 'myth-busting',
+    name: 'Myth-Busting',
+    description: 'Separating fact from fiction',
+    icon: '🔍',
+    template: `[META DESCRIPTION]: "Separate fact from fiction about [topic]"
+[TITLE]: "[X] Common Myths About [Topic] - Debunked"
+[INTRODUCTION]: Why misinformation about this topic is dangerous
+[MYTHS]: H2 headers in "Myth: [statement]" format
+  - Myth 1: [Common misconception]
+    - The Truth: [Evidence-based correction]
+    - Why This Matters: [Clinical implications]
+  - Myth 2: [Common misconception]
+    - The Truth: [Evidence-based correction]
+[THE FACTS]: Summary of what science actually says
+[CONCLUSION]: How to evaluate health information + CTA
+[MEDICAL DISCLAIMER]: Standard warning`
+  }
+];
+
+export interface ContentConfig {
+  blogStructure: BlogStructure;
+  customStructureInstructions: string;
+}
+
+export const DEFAULT_CONTENT_CONFIG: ContentConfig = {
+  blogStructure: 'clinical-authority',
+  customStructureInstructions: ''
+};
+
 // Agent Fine-Tuning Configuration
 export type ToneModifier = 'clinical' | 'friendly' | 'concise' | 'detailed' | 'custom';
 export type PriorityMode = 'speed' | 'quality' | 'balanced';

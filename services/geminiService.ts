@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { AgentId, TokenUsage, AgentConfig, DEFAULT_AGENT_CONFIG } from "../types";
+import { AgentId, TokenUsage, AgentConfig, DEFAULT_AGENT_CONFIG, ContentConfig, BLOG_STRUCTURES, DEFAULT_CONTENT_CONFIG } from "../types";
 
 const TONE_INSTRUCTIONS: Record<string, string> = {
   clinical: 'Use professional medical terminology and maintain a clinical, authoritative tone.',
@@ -11,7 +11,7 @@ const TONE_INSTRUCTIONS: Record<string, string> = {
 };
 
 export class GeminiService {
-  private getPromptForAgent(agentId: AgentId, keyword: string, context: string, config?: AgentConfig): string {
+  private getPromptForAgent(agentId: AgentId, keyword: string, context: string, config?: AgentConfig, contentConfig?: ContentConfig): string {
     // If custom prompt is provided, use it
     if (config?.customSystemPrompt?.trim()) {
       const toneInstruction = config.toneModifier === 'custom'
@@ -48,29 +48,24 @@ ${context ? `Context:\n${context}` : ''}`;
         Format as a research briefing with a distinct "Keyword Strategy" section.`;
 
       case AgentId.WRITER:
+        // Get the selected blog structure template
+        const blogConfig = contentConfig || DEFAULT_CONTENT_CONFIG;
+        const selectedStructure = BLOG_STRUCTURES.find(s => s.id === blogConfig.blogStructure) || BLOG_STRUCTURES[0];
+        const structureTemplate = selectedStructure.template;
+        const customInstructions = blogConfig.customStructureInstructions ? `\n\nADDITIONAL INSTRUCTIONS: ${blogConfig.customStructureInstructions}` : '';
+
         return `You are Agent 2: Content Drafting. 
         Topic: "${keyword}"
         
         ${toneInstruction ? `TONE: ${toneInstruction}\n` : ''}
+        BLOG STRUCTURE: ${selectedStructure.name}
+        
         Using the research provided, you must draft a professional medical blog post following this EXACT TEMPLATE:
         
         --- TEMPLATE START ---
-        [META DESCRIPTION]: 150-160 characters summarizing the post.
-        [TITLE]: H1 Header incorporating the primary keyword.
-        [INTRODUCTION]: 
-          - Hook: An engaging clinical or patient-centric opening.
-          - Overview: Brief explanation of the topic.
-          - Thesis: What this post covers.
-        [MAIN BODY]:
-          - Use H2 and H3 subheadings.
-          - Detailed clinical explanations.
-          - Evidence-based subsections.
-        [CONCLUSION]:
-          - Summary of key takeaways.
-          - Call to Action (CTA): e.g., "Consult your physician..."
-          - Future Outlook: Trends or upcoming research in this area.
-        [MEDICAL DISCLAIMER]: Standard professional warning.
+        ${structureTemplate}
         --- TEMPLATE END ---
+        ${customInstructions}
         
         Drafting Strategy: Ensure the primary keyword "${keyword}" is used naturally in the Title, first paragraph, and at least two subheadings.
         
@@ -151,7 +146,8 @@ ${context ? `Context:\n${context}` : ''}`;
     agentId: AgentId,
     keyword: string,
     previousContext: string,
-    config?: AgentConfig
+    config?: AgentConfig,
+    contentConfig?: ContentConfig
   ): Promise<{ content: string, usage: TokenUsage, skipped?: boolean }> {
     // Use provided config or defaults
     const agentConfig = config || DEFAULT_AGENT_CONFIG;
@@ -166,7 +162,7 @@ ${context ? `Context:\n${context}` : ''}`;
     }
 
     try {
-      const prompt = this.getPromptForAgent(agentId, keyword, previousContext, agentConfig);
+      const prompt = this.getPromptForAgent(agentId, keyword, previousContext, agentConfig, contentConfig);
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       // Apply priority-based adjustments

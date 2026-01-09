@@ -8,7 +8,9 @@ import {
   SanityConfig,
   AirtableConfig,
   AgentConfigs,
-  getDefaultAgentConfigs
+  getDefaultAgentConfigs,
+  ContentConfig,
+  DEFAULT_CONTENT_CONFIG
 } from './types';
 import { geminiService } from './services/geminiService';
 import { publishToSanity, publishToAirtable } from './services/integrationService';
@@ -44,6 +46,11 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : getDefaultAgentConfigs();
   });
 
+  const [contentConfig, setContentConfig] = useState<ContentConfig>(() => {
+    const saved = localStorage.getItem('zappy_content_config');
+    return saved ? JSON.parse(saved) : DEFAULT_CONTENT_CONFIG;
+  });
+
   const [publishModal, setPublishModal] = useState<'sanity' | 'airtable' | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -68,6 +75,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('zappy_agent_configs', JSON.stringify(agentConfigs));
   }, [agentConfigs]);
+
+  useEffect(() => {
+    localStorage.setItem('zappy_content_config', JSON.stringify(contentConfig));
+  }, [contentConfig]);
 
   // Auto-dismiss notification
   useEffect(() => {
@@ -112,7 +123,7 @@ const App: React.FC = () => {
 
       // 2. Writer
       setState(prev => ({ ...prev, activeAgents: [AgentId.WRITER] }));
-      const draft = await geminiService.runAgentTask(AgentId.WRITER, keyword, currentContext, agentConfigs[AgentId.WRITER]);
+      const draft = await geminiService.runAgentTask(AgentId.WRITER, keyword, currentContext, agentConfigs[AgentId.WRITER], contentConfig);
       const draftResponse: AgentResponse = {
         agentId: AgentId.WRITER,
         content: draft.content,
@@ -471,10 +482,12 @@ const App: React.FC = () => {
         savedSanityConfig={sanityConfig}
         savedAirtableConfig={airtableConfig}
         savedAgentConfigs={agentConfigs}
-        onSave={(newSanity, newAirtable, newAgentConfigs) => {
+        savedContentConfig={contentConfig}
+        onSave={(newSanity, newAirtable, newAgentConfigs, newContentConfig) => {
           setSanityConfig(newSanity);
           setAirtableConfig(newAirtable);
           setAgentConfigs(newAgentConfigs);
+          setContentConfig(newContentConfig);
           setNotification({ message: 'Settings saved successfully', type: 'success' });
           setIsSettingsOpen(false);
         }}
