@@ -51,6 +51,50 @@ export interface AirtableConfig {
   tableName: string;
 }
 
+// Agent Fine-Tuning Configuration
+export type ToneModifier = 'clinical' | 'friendly' | 'concise' | 'detailed' | 'custom';
+export type PriorityMode = 'speed' | 'quality' | 'balanced';
+
+export interface AgentConfig {
+  // Model Parameters
+  temperature: number;        // 0-2, creativity/randomness
+  topK: number;               // 1-100, token sampling breadth
+  topP: number;               // 0-1, nucleus sampling
+  maxOutputTokens: number;    // Max response length
+
+  // Persona Tuning
+  customSystemPrompt: string; // Override default agent prompt
+  toneModifier: ToneModifier;
+  customToneInstruction: string;
+
+  // Behavioral Flags
+  enabled: boolean;           // Skip this agent in pipeline
+  priority: PriorityMode;
+}
+
+export type AgentConfigs = Record<AgentId, AgentConfig>;
+
+export const DEFAULT_AGENT_CONFIG: AgentConfig = {
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.95,
+  maxOutputTokens: 4096,
+  customSystemPrompt: '',
+  toneModifier: 'clinical',
+  customToneInstruction: '',
+  enabled: true,
+  priority: 'balanced'
+};
+
+export const getDefaultAgentConfigs = (): AgentConfigs => ({
+  [AgentId.RESEARCHER]: { ...DEFAULT_AGENT_CONFIG },
+  [AgentId.WRITER]: { ...DEFAULT_AGENT_CONFIG },
+  [AgentId.COMPLIANCE]: { ...DEFAULT_AGENT_CONFIG },
+  [AgentId.ENHANCER]: { ...DEFAULT_AGENT_CONFIG, toneModifier: 'friendly' },
+  [AgentId.SEO]: { ...DEFAULT_AGENT_CONFIG },
+  [AgentId.EDITOR]: { ...DEFAULT_AGENT_CONFIG, priority: 'quality' }
+});
+
 export const AGENTS: Agent[] = [
   {
     id: AgentId.RESEARCHER,

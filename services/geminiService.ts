@@ -1,14 +1,44 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { AgentId, TokenUsage } from "../types";
+import { AgentId, TokenUsage, AgentConfig, DEFAULT_AGENT_CONFIG } from "../types";
+
+const TONE_INSTRUCTIONS: Record<string, string> = {
+  clinical: 'Use professional medical terminology and maintain a clinical, authoritative tone.',
+  friendly: 'Use warm, empathetic language that is accessible and reassuring for patients.',
+  concise: 'Be brief and to-the-point. Prioritize clarity and efficiency over elaboration.',
+  detailed: 'Provide comprehensive, thorough explanations with supporting context.',
+  custom: '' // Will use customToneInstruction
+};
 
 export class GeminiService {
-  private getPromptForAgent(agentId: AgentId, keyword: string, context: string): string {
+  private getPromptForAgent(agentId: AgentId, keyword: string, context: string, config?: AgentConfig): string {
+    // If custom prompt is provided, use it
+    if (config?.customSystemPrompt?.trim()) {
+      const toneInstruction = config.toneModifier === 'custom'
+        ? config.customToneInstruction
+        : TONE_INSTRUCTIONS[config.toneModifier];
+
+      return `${config.customSystemPrompt}
+
+TONE INSTRUCTION: ${toneInstruction}
+
+Topic: "${keyword}"
+
+${context ? `Context:\n${context}` : ''}`;
+    }
+
+    // Get tone instruction
+    const toneInstruction = config
+      ? (config.toneModifier === 'custom' ? config.customToneInstruction : TONE_INSTRUCTIONS[config.toneModifier])
+      : TONE_INSTRUCTIONS.clinical;
+
+    // Default prompts with tone injection
     switch (agentId) {
       case AgentId.RESEARCHER:
         return `You are Agent 1: Research & Keyword Analyst. 
         Topic: "${keyword}"
         
+        ${toneInstruction ? `TONE: ${toneInstruction}\n` : ''}
         TASKS:
         1. Conduct deep medical research: provide the latest clinical evidence, physiological explanations, and recent statistics.
         2. Keyword Strategy: Identify a Primary Keyword, 3 Secondary Keywords, and 5 Semantic LSI Keywords related to "${keyword}".
@@ -21,6 +51,7 @@ export class GeminiService {
         return `You are Agent 2: Content Drafting. 
         Topic: "${keyword}"
         
+        ${toneInstruction ? `TONE: ${toneInstruction}\n` : ''}
         Using the research provided, you must draft a professional medical blog post following this EXACT TEMPLATE:
         
         --- TEMPLATE START ---
@@ -50,6 +81,7 @@ export class GeminiService {
         return `You are Agent 3: Medical Accuracy Review. 
         Topic: "${keyword}"
         
+        ${toneInstruction ? `TONE: ${toneInstruction}\n` : ''}
         TASKS:
         1. Fact-check the draft. Identify any medically dubious, exaggerated, or dangerous claims.
         2. Safety Warnings: Ensure proper "red flags" or "when to see a doctor" sections are robust.
@@ -65,6 +97,7 @@ export class GeminiService {
         return `You are Agent 4: Readability & Engagement Enhancement. 
         Topic: "${keyword}"
         
+        ${toneInstruction ? `TONE: ${toneInstruction}\n` : ''}
         TASKS:
         1. Break down complex medical jargon into patient-friendly explanations without losing scientific integrity.
         2. Improve engagement: use active voice, bullet points, and transition phrases.
@@ -78,6 +111,7 @@ export class GeminiService {
         return `You are Agent 5: SEO Optimization. 
         Topic: "${keyword}"
         
+        ${toneInstruction ? `TONE: ${toneInstruction}\n` : ''}
         TASKS:
         1. Keyword Integration: Review the keyword strategy. Ensure the Primary and Secondary keywords are distributed naturally (density ~1.5%).
         2. Header Optimization: Refine H2/H3 headers for search intent (e.g., using questions people ask).
@@ -93,6 +127,7 @@ export class GeminiService {
         return `You are Agent 6: Executive Medical Editor.
         Topic: "${keyword}"
         
+        ${toneInstruction ? `TONE: ${toneInstruction}\n` : ''}
         Your task is to produce the MASTER VERSION of the medical blog post by synthesizing inputs from 5 specialized agents.
         
         SYNTHESIS GUIDELINES:
@@ -112,17 +147,48 @@ export class GeminiService {
     }
   }
 
-  async runAgentTask(agentId: AgentId, keyword: string, previousContext: string): Promise<{content: string, usage: TokenUsage}> {
+  async runAgentTask(
+    agentId: AgentId,
+    keyword: string,
+    previousContext: string,
+    config?: AgentConfig
+  ): Promise<{ content: string, usage: TokenUsage, skipped?: boolean }> {
+    // Use provided config or defaults
+    const agentConfig = config || DEFAULT_AGENT_CONFIG;
+
+    // Check if agent is disabled
+    if (!agentConfig.enabled) {
+      return {
+        content: `[Agent ${agentId} is disabled - skipped]`,
+        usage: { promptTokens: 0, responseTokens: 0, totalTokens: 0 },
+        skipped: true
+      };
+    }
+
     try {
-      const prompt = this.getPromptForAgent(agentId, keyword, previousContext);
+      const prompt = this.getPromptForAgent(agentId, keyword, previousContext, agentConfig);
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+      // Apply priority-based adjustments
+      let temperature = agentConfig.temperature;
+      let maxTokens = agentConfig.maxOutputTokens;
+
+      if (agentConfig.priority === 'speed') {
+        temperature = Math.min(temperature, 0.5); // Lower temp for faster, more deterministic
+        maxTokens = Math.min(maxTokens, 2048); // Shorter responses
+      } else if (agentConfig.priority === 'quality') {
+        temperature = Math.max(temperature, 0.7); // Allow more creativity
+        maxTokens = Math.max(maxTokens, 4096); // Longer, more detailed responses
+      }
+
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
         config: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
+          temperature: temperature,
+          topK: agentConfig.topK,
+          topP: agentConfig.topP,
+          maxOutputTokens: maxTokens,
         }
       });
 
@@ -144,3 +210,4 @@ export class GeminiService {
 }
 
 export const geminiService = new GeminiService();
+

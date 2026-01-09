@@ -1,12 +1,14 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { 
-  BlogState, 
-  AgentId, 
-  AGENTS, 
+import {
+  BlogState,
+  AgentId,
+  AGENTS,
   AgentResponse,
   SanityConfig,
-  AirtableConfig
+  AirtableConfig,
+  AgentConfigs,
+  getDefaultAgentConfigs
 } from './types';
 import { geminiService } from './services/geminiService';
 import { publishToSanity, publishToAirtable } from './services/integrationService';
@@ -37,9 +39,14 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : { apiKey: '', baseId: '', tableName: 'Content' };
   });
 
+  const [agentConfigs, setAgentConfigs] = useState<AgentConfigs>(() => {
+    const saved = localStorage.getItem('zappy_agent_configs');
+    return saved ? JSON.parse(saved) : getDefaultAgentConfigs();
+  });
+
   const [publishModal, setPublishModal] = useState<'sanity' | 'airtable' | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -58,6 +65,10 @@ const App: React.FC = () => {
     localStorage.setItem('zappy_airtable_config', JSON.stringify(airtableConfig));
   }, [airtableConfig]);
 
+  useEffect(() => {
+    localStorage.setItem('zappy_agent_configs', JSON.stringify(agentConfigs));
+  }, [agentConfigs]);
+
   // Auto-dismiss notification
   useEffect(() => {
     if (notification) {
@@ -69,48 +80,48 @@ const App: React.FC = () => {
   const runOrchestrator = async (keyword: string) => {
     if (!keyword.trim()) return;
 
-    setState(prev => ({ 
-      ...prev, 
-      keyword, 
-      isGenerating: true, 
-      error: null, 
-      history: [], 
+    setState(prev => ({
+      ...prev,
+      keyword,
+      isGenerating: true,
+      error: null,
+      history: [],
       finalPost: null,
       activeAgents: [],
       totalTokens: 0
     }));
 
     let currentContext = "";
-    
+
     try {
       // 1. Researcher
       setState(prev => ({ ...prev, activeAgents: [AgentId.RESEARCHER] }));
-      const research = await geminiService.runAgentTask(AgentId.RESEARCHER, keyword, "");
-      const researchResponse: AgentResponse = { 
-        agentId: AgentId.RESEARCHER, 
-        content: research.content, 
+      const research = await geminiService.runAgentTask(AgentId.RESEARCHER, keyword, "", agentConfigs[AgentId.RESEARCHER]);
+      const researchResponse: AgentResponse = {
+        agentId: AgentId.RESEARCHER,
+        content: research.content,
         timestamp: Date.now(),
         usage: research.usage
       };
       currentContext += `\n\n[RESEARCH REPORT]\n${research.content}`;
-      setState(prev => ({ 
-        ...prev, 
+      setState(prev => ({
+        ...prev,
         history: [researchResponse],
         totalTokens: prev.totalTokens + research.usage.totalTokens
       }));
 
       // 2. Writer
       setState(prev => ({ ...prev, activeAgents: [AgentId.WRITER] }));
-      const draft = await geminiService.runAgentTask(AgentId.WRITER, keyword, currentContext);
-      const draftResponse: AgentResponse = { 
-        agentId: AgentId.WRITER, 
-        content: draft.content, 
+      const draft = await geminiService.runAgentTask(AgentId.WRITER, keyword, currentContext, agentConfigs[AgentId.WRITER]);
+      const draftResponse: AgentResponse = {
+        agentId: AgentId.WRITER,
+        content: draft.content,
         timestamp: Date.now(),
         usage: draft.usage
       };
       currentContext += `\n\n[INITIAL DRAFT]\n${draft.content}`;
-      setState(prev => ({ 
-        ...prev, 
+      setState(prev => ({
+        ...prev,
         history: [researchResponse, draftResponse],
         totalTokens: prev.totalTokens + draft.usage.totalTokens
       }));
@@ -118,15 +129,15 @@ const App: React.FC = () => {
       // 3. Parallel Agents (Compliance, Enhancer, SEO)
       setState(prev => ({ ...prev, activeAgents: [AgentId.COMPLIANCE, AgentId.ENHANCER, AgentId.SEO] }));
       const parallelTask = async (id: AgentId) => {
-        const result = await geminiService.runAgentTask(id, keyword, currentContext);
-        return { 
-          agentId: id, 
-          content: result.content, 
+        const result = await geminiService.runAgentTask(id, keyword, currentContext, agentConfigs[id]);
+        return {
+          agentId: id,
+          content: result.content,
           timestamp: Date.now(),
           usage: result.usage
         };
       };
-      
+
       const parallelResults = await Promise.all([
         parallelTask(AgentId.COMPLIANCE),
         parallelTask(AgentId.ENHANCER),
@@ -135,13 +146,13 @@ const App: React.FC = () => {
 
       const parallelTokens = parallelResults.reduce((acc, curr) => acc + (curr.usage?.totalTokens || 0), 0);
       const updatedHistory = [researchResponse, draftResponse, ...parallelResults];
-      
-      setState(prev => ({ 
-        ...prev, 
+
+      setState(prev => ({
+        ...prev,
         history: updatedHistory,
         totalTokens: prev.totalTokens + parallelTokens
       }));
-      
+
       parallelResults.forEach(res => {
         const agentName = AGENTS.find(a => a.id === res.agentId)?.name || res.agentId;
         currentContext += `\n\n[FEEDBACK FROM ${agentName.toUpperCase()}]\n${res.content}`;
@@ -149,17 +160,17 @@ const App: React.FC = () => {
 
       // 4. Editor
       setState(prev => ({ ...prev, activeAgents: [AgentId.EDITOR] }));
-      const final = await geminiService.runAgentTask(AgentId.EDITOR, keyword, currentContext);
-      const finalResponse: AgentResponse = { 
-        agentId: AgentId.EDITOR, 
-        content: final.content, 
+      const final = await geminiService.runAgentTask(AgentId.EDITOR, keyword, currentContext, agentConfigs[AgentId.EDITOR]);
+      const finalResponse: AgentResponse = {
+        agentId: AgentId.EDITOR,
+        content: final.content,
         timestamp: Date.now(),
         usage: final.usage
       };
-      
-      setState(prev => ({ 
-        ...prev, 
-        history: [...updatedHistory, finalResponse], 
+
+      setState(prev => ({
+        ...prev,
+        history: [...updatedHistory, finalResponse],
         finalPost: final.content,
         totalTokens: prev.totalTokens + final.usage.totalTokens
       }));
@@ -190,7 +201,7 @@ const App: React.FC = () => {
   const handlePublish = async (config: any) => {
     if (!state.finalPost) return;
     const title = extractTitle(state.finalPost);
-    
+
     if (publishModal === 'sanity') {
       await publishToSanity(config, title, state.finalPost);
       setNotification({ message: 'Successfully published to Sanity CMS!', type: 'success' });
@@ -206,8 +217,8 @@ const App: React.FC = () => {
       {notification && (
         <div className={`fixed top-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-[slideInTop_0.3s_ease-out]
           ${notification.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
-           <span className="text-xl">{notification.type === 'success' ? '✅' : '⚠️'}</span>
-           <span className="font-bold text-sm">{notification.message}</span>
+          <span className="text-xl">{notification.type === 'success' ? '✅' : '⚠️'}</span>
+          <span className="font-bold text-sm">{notification.message}</span>
         </div>
       )}
 
@@ -230,7 +241,7 @@ const App: React.FC = () => {
             <h3 className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Neural Pipeline</h3>
             <div className="space-y-1">
               {AGENTS.map(agent => (
-                <AgentCard 
+                <AgentCard
                   key={agent.id}
                   agent={agent}
                   isActive={state.activeAgents.includes(agent.id)}
@@ -243,44 +254,44 @@ const App: React.FC = () => {
 
           {(state.isGenerating || state.finalPost) && (
             <div className="px-4 py-6 rounded-3xl bg-orange-50/50 border border-orange-100">
-               <h3 className="text-[10px] font-black text-orange-600 uppercase tracking-[0.2em] mb-3">Generation Stats</h3>
-               <div className="space-y-4">
-                 <div className="space-y-2">
-                   <div className="flex justify-between text-xs">
-                     <span className="text-slate-500">Progress</span>
-                     <span className="font-bold text-orange-600">{Math.round((state.history.length / AGENTS.length) * 100)}%</span>
-                   </div>
-                   <div className="h-1.5 w-full bg-orange-100 rounded-full overflow-hidden">
-                     <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${(state.history.length / AGENTS.length) * 100}%` }}></div>
-                   </div>
-                 </div>
-                 
-                 <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-orange-100/50 shadow-sm">
-                   <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-xs text-orange-600 font-black">
-                     TOK
-                   </div>
-                   <div>
-                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Tokens</p>
-                     <p className="text-sm font-bold text-slate-900 font-mono">
-                       {state.totalTokens.toLocaleString()}
-                     </p>
-                   </div>
-                 </div>
-               </div>
+              <h3 className="text-[10px] font-black text-orange-600 uppercase tracking-[0.2em] mb-3">Generation Stats</h3>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Progress</span>
+                    <span className="font-bold text-orange-600">{Math.round((state.history.length / AGENTS.length) * 100)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-orange-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${(state.history.length / AGENTS.length) * 100}%` }}></div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-orange-100/50 shadow-sm">
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-xs text-orange-600 font-black">
+                    TOK
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Tokens</p>
+                    <p className="text-sm font-bold text-slate-900 font-mono">
+                      {state.totalTokens.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </nav>
 
         <div className="p-6 border-t border-slate-50 flex flex-col gap-4">
           <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100">
-             <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-xs">⚡</div>
-             <div className="flex-1">
-               <p className="text-[10px] font-bold text-slate-900">High-Speed Engine</p>
-               <p className="text-[9px] text-slate-400 font-medium">Parallel Consensus v2.4</p>
-             </div>
+            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-xs">⚡</div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold text-slate-900">High-Speed Engine</p>
+              <p className="text-[9px] text-slate-400 font-medium">Parallel Consensus v2.4</p>
+            </div>
           </div>
-          
-          <button 
+
+          <button
             onClick={() => setIsSettingsOpen(true)}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all group"
           >
@@ -300,14 +311,14 @@ const App: React.FC = () => {
         {/* Top Header Navigation */}
         <header className="sticky top-0 z-40 h-20 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-12">
           <div className="flex items-center gap-4">
-             <span className="text-xs font-bold text-slate-400">Project /</span>
-             <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
-               {state.keyword || 'Medical Content Hub'}
-             </span>
+            <span className="text-xs font-bold text-slate-400">Project /</span>
+            <span className="text-xs font-black text-slate-900 uppercase tracking-wider">
+              {state.keyword || 'Medical Content Hub'}
+            </span>
           </div>
           <div className="flex items-center gap-6">
-             <button onClick={reset} className="text-xs font-bold text-slate-500 hover:text-orange-500 transition-colors">History</button>
-             <button onClick={reset} className="px-5 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-orange-600 transition-all active:scale-95 shadow-lg shadow-slate-200">New Post</button>
+            <button onClick={reset} className="text-xs font-bold text-slate-500 hover:text-orange-500 transition-colors">History</button>
+            <button onClick={reset} className="px-5 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-orange-600 transition-all active:scale-95 shadow-lg shadow-slate-200">New Post</button>
           </div>
         </header>
 
@@ -315,28 +326,28 @@ const App: React.FC = () => {
           {!state.isGenerating && !state.finalPost ? (
             <div className="mt-20 text-center animate-[fadeIn_0.5s_ease-out]">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-orange-50 text-orange-600 rounded-full text-[10px] font-black uppercase tracking-[0.2em] mb-8">
-                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
-                 6 Specialized Medical Agents
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" /></svg>
+                6 Specialized Medical Agents
               </div>
               <h2 className="text-6xl font-black text-slate-900 mb-6 leading-tight tracking-tighter">
-                Generate expert blogs with <br/>
+                Generate expert blogs with <br />
                 <span className="text-orange-500 italic">Zappy precision.</span>
               </h2>
               <p className="text-lg text-slate-400 mb-12 max-w-2xl mx-auto font-medium leading-relaxed">
                 Enter your medical topic and watch our neural pipeline collaborate across research, accuracy, and optimization in real-time.
               </p>
-              
+
               <form onSubmit={handleStart} className="max-w-2xl mx-auto relative group">
                 <div className="absolute -inset-1 bg-gradient-to-r from-orange-400 to-red-400 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
                 <div className="relative bg-white border-2 border-slate-100 rounded-2xl flex items-center p-2 shadow-xl">
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     name="keyword"
-                    placeholder="e.g. Cognitive effects of intermittent fasting..." 
+                    placeholder="e.g. Cognitive effects of intermittent fasting..."
                     required
                     className="flex-1 pl-6 pr-4 py-4 outline-none text-lg font-medium placeholder:text-slate-300"
                   />
-                  <button 
+                  <button
                     type="submit"
                     className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-xl font-black transition-all flex items-center gap-2 shadow-lg shadow-orange-200 uppercase tracking-wider text-xs active:scale-95"
                   >
@@ -358,7 +369,7 @@ const App: React.FC = () => {
                       <h2 className="text-3xl font-black mb-2">Processing: {state.keyword}</h2>
                       <p className="text-orange-100 text-sm font-bold uppercase tracking-widest">Parallel Neural Synthesis in Progress</p>
                       <div className="mt-8 flex gap-2">
-                        {Array.from({length: 6}).map((_, i) => (
+                        {Array.from({ length: 6 }).map((_, i) => (
                           <div key={i} className={`h-1.5 w-full rounded-full ${i < state.history.length ? 'bg-white' : 'bg-white/20 animate-pulse'}`}></div>
                         ))}
                       </div>
@@ -385,7 +396,7 @@ const App: React.FC = () => {
                               </div>
                             )}
                             <div className="h-6 w-px bg-slate-200"></div>
-                            <span className="text-[10px] font-mono text-slate-400 uppercase">Neural_Log v{idx+1}.0</span>
+                            <span className="text-[10px] font-mono text-slate-400 uppercase">Neural_Log v{idx + 1}.0</span>
                           </div>
                         </div>
                         <div className="p-8">
@@ -401,42 +412,42 @@ const App: React.FC = () => {
               ) : state.finalPost && (
                 <div className="bg-white p-12 md:p-20 rounded-[52px] shadow-[0_32px_80px_rgba(0,0,0,0.06)] border border-slate-100 animate-[fadeIn_0.8s_ease-out] relative">
                   <div className="mb-12 flex items-center justify-between">
-                     <div className="inline-flex items-center gap-3 px-6 py-2 bg-orange-50 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-[0.3em] border border-orange-100">
-                       <span className="w-2.5 h-2.5 bg-orange-500 rounded-full animate-pulse shadow-sm"></span>
-                       Clinical Grade Publication
-                     </div>
-                     <div className="flex gap-3">
-                        <button 
-                          onClick={() => setPublishModal('sanity')}
-                          className="flex items-center gap-2 px-4 py-2 bg-[#F03E2F]/10 text-[#F03E2F] rounded-xl hover:bg-[#F03E2F] hover:text-white transition-colors text-xs font-bold"
-                        >
-                          Publish to Sanity
-                        </button>
-                        <button 
-                          onClick={() => setPublishModal('airtable')}
-                          className="flex items-center gap-2 px-4 py-2 bg-[#FCB400]/10 text-[#e6a200] rounded-xl hover:bg-[#FCB400] hover:text-white transition-colors text-xs font-bold"
-                        >
-                          Publish to Airtable
-                        </button>
-                     </div>
+                    <div className="inline-flex items-center gap-3 px-6 py-2 bg-orange-50 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-[0.3em] border border-orange-100">
+                      <span className="w-2.5 h-2.5 bg-orange-500 rounded-full animate-pulse shadow-sm"></span>
+                      Clinical Grade Publication
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setPublishModal('sanity')}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#F03E2F]/10 text-[#F03E2F] rounded-xl hover:bg-[#F03E2F] hover:text-white transition-colors text-xs font-bold"
+                      >
+                        Publish to Sanity
+                      </button>
+                      <button
+                        onClick={() => setPublishModal('airtable')}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#FCB400]/10 text-[#e6a200] rounded-xl hover:bg-[#FCB400] hover:text-white transition-colors text-xs font-bold"
+                      >
+                        Publish to Airtable
+                      </button>
+                    </div>
                   </div>
 
                   <MarkdownRenderer content={state.finalPost} />
-                  
+
                   <div className="mt-24 pt-12 border-t border-slate-100 flex flex-col md:flex-row gap-10 items-center justify-between no-print">
-                     <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-2xl">🎖️</div>
-                        <div>
-                          <p className="text-base font-black text-slate-900 leading-tight">Zappy Authority Suite</p>
-                          <p className="text-xs text-slate-400 font-medium">Verified by 6 Medical Agents • {state.totalTokens > 0 && `${state.totalTokens.toLocaleString()} tokens`}</p>
-                        </div>
-                     </div>
-                     <button 
-                       onClick={reset}
-                       className="bg-slate-900 hover:bg-orange-500 text-white px-12 py-5 rounded-2xl font-black transition-all shadow-xl hover:-translate-y-1 uppercase tracking-widest text-xs"
-                     >
-                       New Content Mission
-                     </button>
+                    <div className="flex items-center gap-5">
+                      <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-2xl">🎖️</div>
+                      <div>
+                        <p className="text-base font-black text-slate-900 leading-tight">Zappy Authority Suite</p>
+                        <p className="text-xs text-slate-400 font-medium">Verified by 6 Medical Agents • {state.totalTokens > 0 && `${state.totalTokens.toLocaleString()} tokens`}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={reset}
+                      className="bg-slate-900 hover:bg-orange-500 text-white px-12 py-5 rounded-2xl font-black transition-all shadow-xl hover:-translate-y-1 uppercase tracking-widest text-xs"
+                    >
+                      New Content Mission
+                    </button>
                   </div>
                 </div>
               )}
@@ -445,23 +456,25 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <PublishModal 
-        isOpen={!!publishModal} 
-        type={publishModal} 
-        onClose={() => setPublishModal(null)} 
+      <PublishModal
+        isOpen={!!publishModal}
+        type={publishModal}
+        onClose={() => setPublishModal(null)}
         onPublish={handlePublish}
         initialSanityConfig={sanityConfig}
         initialAirtableConfig={airtableConfig}
       />
 
-      <SettingsModal 
+      <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         savedSanityConfig={sanityConfig}
         savedAirtableConfig={airtableConfig}
-        onSave={(newSanity, newAirtable) => {
+        savedAgentConfigs={agentConfigs}
+        onSave={(newSanity, newAirtable, newAgentConfigs) => {
           setSanityConfig(newSanity);
           setAirtableConfig(newAirtable);
+          setAgentConfigs(newAgentConfigs);
           setNotification({ message: 'Settings saved successfully', type: 'success' });
           setIsSettingsOpen(false);
         }}
