@@ -34,7 +34,7 @@ export class GeminiProvider implements ILLMProvider {
             maxTokens = Math.max(maxTokens, 4096);
         }
 
-        const modelName = config.priority === 'speed' ? 'gemini-3.0-flash' : 'gemini-3.0-flash';
+        const modelName = 'gemini-2.0-flash-exp';
 
         try {
             const response = await this.client.models.generateContent({
