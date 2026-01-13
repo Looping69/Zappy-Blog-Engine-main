@@ -66,3 +66,79 @@ export const publishToAirtable = async (title: string, content: string) => {
   return response.json();
 };
 
+
+export const publishToWordPress = async (title: string, content: string) => {
+  const baseUrl = import.meta.env.VITE_WORDPRESS_URL;
+  const username = import.meta.env.VITE_WORDPRESS_USERNAME;
+  const appPassword = import.meta.env.VITE_WORDPRESS_APP_PASSWORD;
+
+  if (!baseUrl || !username || !appPassword) {
+    throw new Error('WordPress configuration missing. Please set VITE_WORDPRESS_URL, VITE_WORDPRESS_USERNAME, and VITE_WORDPRESS_APP_PASSWORD in .env');
+  }
+
+  const credentials = btoa(`${username}:${appPassword}`);
+  const response = await fetch(`${baseUrl}/wp-json/wp/v2/posts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Basic ${credentials}`
+    },
+    body: JSON.stringify({
+      title: title,
+      content: content,
+      status: 'draft'
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.message || `WordPress Error: ${response.statusText}`);
+  }
+  return response.json();
+};
+
+export const publishToShopify = async (title: string, content: string) => {
+  const shopName = import.meta.env.VITE_SHOPIFY_SHOP_NAME;
+  const accessToken = import.meta.env.VITE_SHOPIFY_ACCESS_TOKEN;
+
+  if (!shopName || !accessToken) {
+    throw new Error('Shopify configuration missing. Please set VITE_SHOPIFY_SHOP_NAME and VITE_SHOPIFY_ACCESS_TOKEN in .env');
+  }
+
+  const response = await fetch(`https://${shopName}.myshopify.com/admin/api/2023-10/articles.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': accessToken
+    },
+    body: JSON.stringify({
+      article: {
+        title: title,
+        body_html: content,
+        author: 'Zappy Engine'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.errors || `Shopify Error: ${response.statusText}`);
+  }
+  return response.json();
+};
+
+export const saveToNeonBackend = async (keyword: string, title: string, content: string, tokens: number) => {
+  const response = await fetch('http://localhost:4000/api/blogs', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ keyword, title, content, tokens })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.message || `Backend Error: ${response.statusText}`);
+  }
+  return response.json();
+};

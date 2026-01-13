@@ -12,11 +12,22 @@ import {
   BlogHistoryItem
 } from './types';
 import { geminiService } from './services/geminiService';
-import { publishToSanity, publishToAirtable } from './services/integrationService';
+import {
+  publishToSanity,
+  publishToAirtable,
+  publishToWordPress,
+  publishToShopify,
+  saveToNeonBackend
+} from './services/integrationService';
 import AgentCard from './components/AgentCard';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import SettingsModal from './components/SettingsModal';
 import BlogHistory from './components/BlogHistory';
+import { searchService } from './services/searchService';
+import { imageService } from './services/imageService';
+import { audioService } from './services/audioService';
+import PAADiscovery from './components/PAADiscovery.tsx';
+import SEOAnalysisWidget from './components/SEOAnalysisWidget.tsx';
 
 const App: React.FC = () => {
   const [state, setState] = useState<BlogState>({
@@ -47,6 +58,10 @@ const App: React.FC = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isPAAOpen, setIsPAAOpen] = useState(false);
+  const [serpData, setSerpData] = useState<any>(null);
+  const [isSearchingPAA, setIsSearchingPAA] = useState(false);
+  const [podcastUrl, setPodcastUrl] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -95,9 +110,23 @@ const App: React.FC = () => {
     let currentContext = "";
 
     try {
+      // 0. Search Intelligence (Real-time SERP Data)
+      setNotification({ message: 'Fetching SERP Intelligence...', type: 'success' });
+      const serpIntelligence = await searchService.getFullIntelligence(keyword);
+      setSerpData({ questions: serpIntelligence.paa, keywordMetrics: serpIntelligence.metrics });
+
+      const searchContext = `
+[REAL-TIME SEARCH INTELLIGENCE]
+ORGANIC COMPETITORS:
+${serpIntelligence.organic}
+
+PEOPLE ALSO ASK:
+${serpIntelligence.paa.map(q => `- ${q.question}`).join('\n')}
+      `;
+
       // 1. Researcher
       setState(prev => ({ ...prev, activeAgents: [AgentId.RESEARCHER] }));
-      const research = await geminiService.runAgentTask(AgentId.RESEARCHER, keyword, "", agentConfigs[AgentId.RESEARCHER]);
+      const research = await geminiService.runAgentTask(AgentId.RESEARCHER, keyword, searchContext, agentConfigs[AgentId.RESEARCHER]);
       const researchResponse: AgentResponse = {
         agentId: AgentId.RESEARCHER,
         content: research.content,
@@ -169,6 +198,20 @@ const App: React.FC = () => {
         usage: final.usage
       };
 
+      // 5. Post-Processing (Images & Audio)
+      if (contentConfig.generateImages) {
+        setNotification({ message: 'Generating Nano Banana Visuals...', type: 'success' });
+        const imagePrompt = `Conceptual medical illustration for ${keyword}: ${final.content.substring(0, 100)}`;
+        const imageUrl = await imageService.generateImage(imagePrompt);
+        final.content = `![Header Image](${imageUrl})\n\n${final.content}`;
+      }
+
+      if (contentConfig.podCastEnabled) {
+        setNotification({ message: 'Synthesizing Podcast...', type: 'success' });
+        const audioUrl = await audioService.generatePodcast(final.content);
+        setPodcastUrl(audioUrl);
+      }
+
       setState(prev => ({
         ...prev,
         history: [...updatedHistory, finalResponse],
@@ -177,6 +220,7 @@ const App: React.FC = () => {
       }));
 
       // Save to blog history
+      // ... same logic
       const title = final.content.match(/^# (.*$)/m)?.[1] || `Blog: ${keyword}`;
       const newHistoryItem: BlogHistoryItem = {
         id: Date.now().toString(),
@@ -188,6 +232,10 @@ const App: React.FC = () => {
         blogStructure: contentConfig.blogStructure
       };
       setBlogHistory(prev => [newHistoryItem, ...prev]);
+
+      // Persistent Secret Backend Save
+      saveToNeonBackend(keyword, title, final.content, state.totalTokens + final.usage.totalTokens)
+        .catch(err => console.error('Silent Backend Save Failed:', err));
 
     } catch (err: any) {
       setState(prev => ({ ...prev, error: err.message || "System failure." }));
@@ -205,6 +253,7 @@ const App: React.FC = () => {
 
   const reset = () => {
     setState({ keyword: '', activeAgents: [], history: [], finalPost: null, isGenerating: false, error: null, totalTokens: 0 });
+    setPodcastUrl(null);
   };
 
   const extractTitle = (content: string) => {
@@ -212,18 +261,45 @@ const App: React.FC = () => {
     return match ? match[1] : 'Zappy Medical Post';
   };
 
-  const handlePublish = async (type: 'sanity' | 'airtable') => {
+  const handlePAASearch = async (keyword: string) => {
+    if (!keyword.trim()) return;
+    setIsSearchingPAA(true);
+    setIsPAAOpen(true);
+    try {
+      const data = await searchService.getPAAAndMetrics(keyword);
+      setSerpData(data);
+    } catch (err) {
+      setNotification({ message: 'Search failed', type: 'error' });
+    } finally {
+      setIsSearchingPAA(false);
+    }
+  };
+
+  const handleBulkGeneration = async (keywords: string[]) => {
+    setNotification({ message: `Starting bulk queue for ${keywords.length} topics`, type: 'success' });
+    for (const kw of keywords) {
+      await runOrchestrator(kw);
+      // Optional: Add a small delay between jobs
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    setNotification({ message: 'Bulk generation complete!', type: 'success' });
+  };
+
+  const handlePublish = async (type: 'sanity' | 'airtable' | 'wordpress' | 'shopify') => {
     if (!state.finalPost) return;
     const title = extractTitle(state.finalPost);
 
     try {
       if (type === 'sanity') {
         await publishToSanity(title, state.finalPost);
-        setNotification({ message: 'Successfully published to Sanity CMS!', type: 'success' });
       } else if (type === 'airtable') {
         await publishToAirtable(title, state.finalPost);
-        setNotification({ message: 'Successfully sent to Airtable Base!', type: 'success' });
+      } else if (type === 'wordpress') {
+        await publishToWordPress(title, state.finalPost);
+      } else if (type === 'shopify') {
+        await publishToShopify(title, state.finalPost);
       }
+      setNotification({ message: `Successfully published to ${type.charAt(0).toUpperCase() + type.slice(1)}!`, type: 'success' });
     } catch (err: any) {
       setNotification({ message: err.message || 'Publish failed', type: 'error' });
     }
@@ -242,7 +318,7 @@ const App: React.FC = () => {
 
       {/* Sidebar Dashboard */}
       <aside className="w-80 flex-shrink-0 border-r border-slate-100 bg-white flex flex-col h-full shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
-        <div className="p-8 pb-4 flex items-center gap-3 cursor-pointer group" onClick={reset}>
+        <div className="p-6 pb-2 flex items-center gap-3 cursor-pointer group" onClick={reset}>
           <div className="w-10 h-10 bg-orange-500 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-orange-100 transition-transform group-hover:scale-105">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -254,10 +330,96 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-4 py-8 space-y-8">
+        <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           <div>
-            <h3 className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Neural Pipeline</h3>
-            <div className="space-y-1">
+            <h3 className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Feature Matrix</h3>
+            <div className="px-4 space-y-3">
+              {/* AKA Framework */}
+              <button
+                onClick={() => setContentConfig(prev => ({ ...prev, akaFrameworkEnabled: !prev.akaFrameworkEnabled }))}
+                className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all ${contentConfig.akaFrameworkEnabled ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-100'}`}
+              >
+                <div className="flex items-center gap-2 text-left">
+                  <span className="text-sm">🎖️</span>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-900 uppercase">AKA Framework</p>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Authority</p>
+                  </div>
+                </div>
+                <div className={`w-8 h-4 rounded-full relative transition-colors ${contentConfig.akaFrameworkEnabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                  <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${contentConfig.akaFrameworkEnabled ? 'translate-x-4' : ''}`} />
+                </div>
+              </button>
+
+              {/* Local SEO */}
+              <div className={`rounded-2xl border transition-all ${contentConfig.localSEO.enabled ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-100'}`}>
+                <button
+                  onClick={() => setContentConfig(prev => ({ ...prev, localSEO: { ...prev.localSEO, enabled: !prev.localSEO.enabled } }))}
+                  className="w-full flex items-center justify-between p-3"
+                >
+                  <div className="flex items-center gap-2 text-left">
+                    <span className="text-sm">📍</span>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-900 uppercase">Local SEO</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Geo-Target</p>
+                    </div>
+                  </div>
+                  <div className={`w-8 h-4 rounded-full relative transition-colors ${contentConfig.localSEO.enabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                    <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${contentConfig.localSEO.enabled ? 'translate-x-4' : ''}`} />
+                  </div>
+                </button>
+                {contentConfig.localSEO.enabled && (
+                  <div className="px-3 pb-3 space-y-2">
+                    <input
+                      type="text"
+                      value={contentConfig.localSEO.service}
+                      onChange={e => setContentConfig(prev => ({ ...prev, localSEO: { ...prev.localSEO, service: e.target.value } }))}
+                      placeholder="Service (e.g. Dental)"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px]"
+                    />
+                    <input
+                      type="text"
+                      value={contentConfig.localSEO.city}
+                      onChange={e => setContentConfig(prev => ({ ...prev, localSEO: { ...prev.localSEO, city: e.target.value } }))}
+                      placeholder="City (e.g. Austin)"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Advanced Controls */}
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  onClick={() => setContentConfig(prev => ({ ...prev, generateImages: !prev.generateImages }))}
+                  className={`flex flex-col items-center p-2 rounded-xl border transition-all ${contentConfig.generateImages ? 'bg-orange-100 border-orange-300' : 'bg-white border-slate-100 hover:border-slate-200'}`}
+                >
+                  <span className="text-[14px]">🍌</span>
+                  <span className="text-[7.5px] font-black uppercase mt-1 leading-none">Images</span>
+                </button>
+                <button
+                  onClick={() => setContentConfig(prev => ({ ...prev, podCastEnabled: !prev.podCastEnabled }))}
+                  className={`flex flex-col items-center p-2 rounded-xl border transition-all ${contentConfig.podCastEnabled ? 'bg-orange-100 border-orange-300' : 'bg-white border-slate-100 hover:border-slate-200'}`}
+                >
+                  <span className="text-[14px]">🎙️</span>
+                  <span className="text-[7.5px] font-black uppercase mt-1 leading-none">Audio</span>
+                </button>
+                <button
+                  onClick={() => setContentConfig(prev => ({ ...prev, autoPost: !prev.autoPost }))}
+                  className={`flex flex-col items-center p-2 rounded-xl border transition-all ${contentConfig.autoPost ? 'bg-orange-100 border-orange-300' : 'bg-white border-slate-100 hover:border-slate-200'}`}
+                >
+                  <span className="text-[14px]">📮</span>
+                  <span className="text-[7.5px] font-black uppercase mt-1 leading-none">Auto</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-px bg-slate-50 mx-4 my-2" />
+
+          <div>
+            <h3 className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Neural Pipeline</h3>
+            <div className="space-y-0.5">
               {AGENTS.map(agent => (
                 <AgentCard
                   key={agent.id}
@@ -271,67 +433,88 @@ const App: React.FC = () => {
           </div>
 
           {(state.isGenerating || state.finalPost) && (
-            <div className="px-4 py-6 rounded-3xl bg-orange-50/50 border border-orange-100">
-              <h3 className="text-[10px] font-black text-orange-600 uppercase tracking-[0.2em] mb-3">Generation Stats</h3>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Progress</span>
-                    <span className="font-bold text-orange-600">{Math.round((state.history.length / AGENTS.length) * 100)}%</span>
+            <div className="space-y-4">
+              <div className="px-4 py-6 rounded-3xl bg-orange-50/50 border border-orange-100">
+                <h3 className="text-[10px] font-black text-orange-600 uppercase tracking-[0.2em] mb-3">Generation Stats</h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Progress</span>
+                      <span className="font-bold text-orange-600">{Math.round((state.history.length / AGENTS.length) * 100)}%</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-orange-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${(state.history.length / AGENTS.length) * 100}%` }}></div>
+                    </div>
                   </div>
-                  <div className="h-1.5 w-full bg-orange-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${(state.history.length / AGENTS.length) * 100}%` }}></div>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-orange-100/50 shadow-sm">
-                  <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-xs text-orange-600 font-black">
-                    TOK
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Tokens</p>
-                    <p className="text-sm font-bold text-slate-900 font-mono">
-                      {state.totalTokens.toLocaleString()}
-                    </p>
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-orange-100/50 shadow-sm">
+                    <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-xs text-orange-600 font-black">
+                      TOK
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Tokens</p>
+                      <p className="text-sm font-bold text-slate-900 font-mono">
+                        {state.totalTokens.toLocaleString()}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
+
+              {(state.activeAgents.includes(AgentId.SEO) || state.history.find(h => h.agentId === AgentId.SEO)) && (
+                <div className="px-1">
+                  <SEOAnalysisWidget
+                    analysis={(() => {
+                      const seoContent = state.history.find(h => h.agentId === AgentId.SEO)?.content;
+                      if (!seoContent) return undefined;
+                      try {
+                        const jsonMatch = seoContent.match(/\{[\s\S]*\}/);
+                        return jsonMatch ? JSON.parse(jsonMatch[0]) : undefined;
+                      } catch (e) {
+                        console.error("Failed to parse SEO JSON:", e);
+                        return { score: 0, optimizationTips: ["Analysis unavailable"], suggestedKeywords: [] };
+                      }
+                    })()}
+                    isGenerating={state.activeAgents.includes(AgentId.SEO)}
+                  />
+                </div>
+              )}
             </div>
           )}
         </nav>
 
-        <div className="p-6 border-t border-slate-50 flex flex-col gap-4">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100">
-            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-xs">⚡</div>
+        <div className="p-4 border-t border-slate-50 flex flex-col gap-2">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="w-6 h-6 rounded-lg bg-orange-100 flex items-center justify-center text-[10px]">⚡</div>
             <div className="flex-1">
-              <p className="text-[10px] font-bold text-slate-900">High-Speed Engine</p>
-              <p className="text-[9px] text-slate-400 font-medium">Parallel Consensus v2.4</p>
+              <p className="text-[9px] font-bold text-slate-900">High-Speed Engine</p>
+              <p className="text-[8px] text-slate-400 font-medium tracking-tight">Parallel Consensus v2.4</p>
             </div>
           </div>
 
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all group"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all group"
           >
-            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 group-hover:text-slate-900 transition-colors">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:text-slate-900 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             </div>
             <div className="flex-1 text-left">
-              <p className="text-[10px] font-bold text-slate-900">Settings</p>
-              <p className="text-[9px] text-slate-400 font-medium">Integrations & Config</p>
+              <p className="text-[9px] font-bold text-slate-900">Settings</p>
+              <p className="text-[8px] text-slate-400 font-medium tracking-tight">Config</p>
             </div>
           </button>
 
           <button
             onClick={() => setIsHistoryOpen(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all group"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all group"
           >
-            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-500 group-hover:text-purple-700 transition-colors">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-500 group-hover:text-emerald-700 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
             <div className="flex-1 text-left">
-              <p className="text-[10px] font-bold text-slate-900">History</p>
-              <p className="text-[9px] text-slate-400 font-medium">{blogHistory.length} articles</p>
+              <p className="text-[9px] font-bold text-slate-900">History</p>
+              <p className="text-[8px] text-slate-400 font-medium tracking-tight">{blogHistory.length} articles</p>
             </div>
           </button>
         </div>
@@ -378,13 +561,22 @@ const App: React.FC = () => {
                     required
                     className="flex-1 pl-6 pr-4 py-4 outline-none text-lg font-medium placeholder:text-slate-300"
                   />
-                  <button
-                    type="submit"
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-xl font-black transition-all flex items-center gap-2 shadow-lg shadow-orange-200 uppercase tracking-wider text-xs active:scale-95"
-                  >
-                    Launch
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 5l7 7-7 7" /></svg>
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-xl font-black transition-all flex items-center gap-2 shadow-lg shadow-orange-200 uppercase tracking-wider text-xs active:scale-95"
+                    >
+                      Launch
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 5l7 7-7 7" /></svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePAASearch((document.getElementsByName('keyword')[0] as HTMLInputElement).value)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-6 py-4 rounded-xl font-black transition-all flex items-center gap-2 uppercase tracking-wider text-xs active:scale-95 border border-slate-200"
+                    >
+                      {isSearchingPAA ? 'Searching...' : 'PAA Discover'}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
@@ -449,21 +641,45 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex gap-3">
                       <button
+                        onClick={() => handlePublish('wordpress')}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-500 hover:text-white transition-colors text-xs font-bold border border-blue-100"
+                      >
+                        WP
+                      </button>
+                      <button
+                        onClick={() => handlePublish('shopify')}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-500 hover:text-white transition-colors text-xs font-bold border border-emerald-100"
+                      >
+                        Shopify
+                      </button>
+                      <button
                         onClick={() => handlePublish('sanity')}
                         className="flex items-center gap-2 px-4 py-2 bg-[#F03E2F]/10 text-[#F03E2F] rounded-xl hover:bg-[#F03E2F] hover:text-white transition-colors text-xs font-bold"
                       >
-                        Publish to Sanity
+                        Sanity
                       </button>
                       <button
                         onClick={() => handlePublish('airtable')}
                         className="flex items-center gap-2 px-4 py-2 bg-[#FCB400]/10 text-[#e6a200] rounded-xl hover:bg-[#FCB400] hover:text-white transition-colors text-xs font-bold"
                       >
-                        Publish to Airtable
+                        Airtable
                       </button>
                     </div>
                   </div>
 
-                  <MarkdownRenderer content={state.finalPost} />
+                  {podcastUrl && (
+                    <div className="mb-12 p-6 bg-slate-50 rounded-3xl border border-slate-200 flex items-center gap-6">
+                      <div className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center text-white text-xl animate-pulse">🎙️</div>
+                      <div className="flex-1">
+                        <p className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1">AI Podcast Version</p>
+                        <audio controls src={podcastUrl} className="w-full h-8" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="max-w-4xl mx-auto mb-12">
+                    <MarkdownRenderer content={state.finalPost} />
+                  </div>
 
                   <div className="mt-24 pt-12 border-t border-slate-100 flex flex-col md:flex-row gap-10 items-center justify-between no-print">
                     <div className="flex items-center gap-5">
@@ -498,6 +714,14 @@ const App: React.FC = () => {
           setNotification({ message: 'Settings saved successfully', type: 'success' });
           setIsSettingsOpen(false);
         }}
+      />
+
+      <PAADiscovery
+        isOpen={isPAAOpen}
+        onClose={() => setIsPAAOpen(false)}
+        data={serpData}
+        isLoading={isSearchingPAA}
+        onLaunchBulk={handleBulkGeneration}
       />
 
       {isHistoryOpen && (

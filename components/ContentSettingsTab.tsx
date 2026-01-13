@@ -84,6 +84,8 @@ const ContentSettingsTab: React.FC<ContentSettingsTabProps> = ({
                 />
             </div>
 
+            {/* Template Selection and Preview are kept here */}
+
             {/* Quick Tips */}
             <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
                 <div className="flex items-start gap-3">

@@ -8,6 +8,13 @@ export enum AgentId {
   EDITOR = 'editor'
 }
 
+export enum LLMProvider {
+  GEMINI = 'gemini',
+  ANTHROPIC = 'anthropic',
+  OPENAI = 'openai',
+  PERPLEXITY = 'perplexity'
+}
+
 export interface Agent {
   id: AgentId;
   name: string;
@@ -61,6 +68,82 @@ export interface AirtableConfig {
   tableName: string;
 }
 
+export interface WordPressConfig {
+  baseUrl: string;
+  username: string;
+  applicationPassword: string;
+}
+
+export interface ShopifyConfig {
+  shopName: string;
+  accessToken: string;
+}
+
+export interface SerpApiConfig {
+  apiKey: string;
+}
+
+export interface ImageGenConfig {
+  apiKey: string;
+  model: 'dall-e-3' | 'dall-e-2';
+  size: '1024x1024' | '1024x1792';
+}
+
+export interface TTSConfig {
+  apiKey: string;
+  voice: string;
+}
+
+export interface AnthropicConfig {
+  apiKey: string;
+}
+
+export interface OpenAIConfig {
+  apiKey: string;
+}
+
+export interface PerplexityConfig {
+  apiKey: string;
+}
+
+export interface PAAQuestion {
+  question: string;
+  snippet?: string;
+  sourceTitle?: string;
+  sourceLink?: string;
+}
+
+export interface KeywordMetrics {
+  volume: number;
+  cpc: number;
+  competition: number;
+}
+
+export interface SERPData {
+  questions: PAAQuestion[];
+  keywordMetrics?: KeywordMetrics;
+}
+
+export interface SEOAnalysis {
+  score: number;
+  optimizationTips: string[];
+  suggestedKeywords: string[];
+  semanticTopicalMap?: string;
+}
+
+export interface LinkRecommendation {
+  type: 'internal' | 'outbound';
+  anchorText: string;
+  url: string;
+  reason: string;
+}
+
+export interface LocalSEOConfig {
+  enabled: boolean;
+  service: string;
+  city: string;
+}
+
 // Blog Structure Templates
 export type BlogStructure =
   | 'schema-v12'
@@ -70,7 +153,8 @@ export type BlogStructure =
   | 'qa-format'
   | 'comparison'
   | 'case-study'
-  | 'myth-busting';
+  | 'myth-busting'
+  | 'archon-manuscript';
 
 export interface BlogStructureOption {
   id: BlogStructure;
@@ -214,17 +298,101 @@ export const BLOG_STRUCTURES: BlogStructureOption[] = [
 [THE FACTS]: Summary of what science actually says
 [CONCLUSION]: How to evaluate health information + CTA
 [MEDICAL DISCLAIMER]: Standard warning`
+  },
+  {
+    id: 'archon-manuscript',
+    name: 'Something Mysterious',
+    description: 'A classified, 15-point high-authority protocol for ultimate search dominance.',
+    icon: '📜',
+    template: `1) SEO Targeting Block (Mandatory)
+- Primary Query (Exact match)
+- Search Intent: (Informational/Transactional/Navigational/Local)
+- Audience + Context (1 line: "for who + in what situation")
+- Primary Keyword + 3 Secondary Keywords
+- "People Also Ask" Targets (3–6 questions to answer verbatim)
+
+2) SERP Package
+- SEO Title (50–65 chars; include primary keyword early)
+- Slug (short, human, keyworded)
+- Meta Description (145–155 chars; include benefit + qualifier)
+- Featured Snippet Candidate (40–60 words, definition-style)
+- Key Facts Box (3–6 facts with units, thresholds, or ranges)
+
+3) Introduction (Hook Rules)
+- 1-sentence problem framing
+- 1-sentence who this is for
+- 1-sentence what you’ll learn
+(Keep it 350–650 chars, but make it punchy and specific.)
+
+4) TL;DR (Must be "action + meaning")
+- 4-6 bullets
+- Each bullet = what to do / what it means / who it applies to
+
+5) Quick Navigation
+- 6-10 anchor links (mirroring headings)
+
+6) Core Explanation
+- Overview (simple, 120–220 words)
+- Mechanism (how it works; 150–300 words)
+- Who it’s for / not for (clear inclusion + exclusion)
+
+7) Evidence & Trust Layer (Enforce ONE path)
+A) Evidence Summary (clinical topics): Grade (Strong/Moderate/Mixed) + What studies show + What we don't know.
+B) Provider Guidance (service topics): What professionals recommend + When to escalate.
+
+8) Risk, Safety & Boundaries
+- Red Flags (3-6 bullets)
+- Contraindications / Don'ts
+- Common Mistakes (3-5 bullets)
+
+9) Common Concerns (Q&A)
+- 4-7 natural language queries
+- Answers MUST start with a direct yes/no/it depends sentence.
+
+10) Supportive Actions (Playbook style)
+- 3-7 actions with Why it helps, How to do it, and Time-to-effect.
+
+11) Topic-Specific Module (Pick ONE)
+- Comparison / Cost / Protocol / Checklist / Troubleshooting / Localized.
+
+12) Key Takeaway
+- One paragraph + one single-sentence "If you remember one thing..."
+
+13) FAQ
+- 5-8 Q&As (Must include at least 2 edge cases and 1 timing/frequency question)
+
+14) Credibility Footer
+- Sources + Last Updated + Reviewed By.
+
+15) Disclaimer
+- Topic-appropriate "not a substitute for professional advice" phrasing.`
   }
 ];
 
 export interface ContentConfig {
   blogStructure: BlogStructure;
   customStructureInstructions: string;
+  akaFrameworkEnabled: boolean;
+  localSEO: LocalSEOConfig;
+  generateImages: boolean;
+  autoPost: boolean;
+  dripFeedDays: number;
+  podCastEnabled: boolean;
 }
 
 export const DEFAULT_CONTENT_CONFIG: ContentConfig = {
   blogStructure: 'schema-v12',
-  customStructureInstructions: ''
+  customStructureInstructions: '',
+  akaFrameworkEnabled: false,
+  localSEO: {
+    enabled: false,
+    service: '',
+    city: ''
+  },
+  generateImages: false,
+  autoPost: false,
+  dripFeedDays: 1,
+  podCastEnabled: false
 };
 
 // Agent Fine-Tuning Configuration

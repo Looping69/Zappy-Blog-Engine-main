@@ -65,6 +65,11 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
         return <blockquote key={`line-${i}`} className="border-l-4 border-emerald-500 pl-6 py-2 my-6 italic text-slate-600 bg-emerald-50/30 rounded-r-lg">{parseLine(trimmed.slice(2), i)}</blockquote>;
       }
 
+      const imgMatch = trimmed.match(/!\[(.*?)\]\((.*?)\)/);
+      if (imgMatch) {
+        return <img key={`line-${i}`} src={imgMatch[2]} alt={imgMatch[1]} className="w-full h-auto rounded-[32px] shadow-2xl my-12 object-cover border-4 border-white ring-1 ring-slate-100" />;
+      }
+
       return <p key={`line-${i}`} className="mb-6 text-slate-700 leading-relaxed text-lg md:text-xl font-normal">{parseLine(line, i)}</p>;
     });
   };
