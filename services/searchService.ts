@@ -11,8 +11,8 @@ export class SearchService {
         }
 
         try {
-            // Use local backend proxy to avoid CORS
-            const response = await fetch(`http://localhost:4000/api/search?q=${encodeURIComponent(keyword)}`);
+            // Use relative path to leverage Vite proxy (dev) and Vercel functions (prod)
+            const response = await fetch(`/api/search?q=${encodeURIComponent(keyword)}`);
             const data = await response.json();
 
             if (data.error) throw new Error(data.error);
@@ -34,8 +34,8 @@ export class SearchService {
         if (!this.apiKey) return "No search data available (Dev Mode)";
 
         try {
-            // Use local backend proxy to avoid CORS
-            const response = await fetch(`http://localhost:4000/api/search?q=${encodeURIComponent(keyword)}`);
+            // Use relative path to leverage Vite proxy (dev) and Vercel functions (prod)
+            const response = await fetch(`/api/search?q=${encodeURIComponent(keyword)}`);
             const data = await response.json();
 
             if (data.error) throw new Error(data.error);
