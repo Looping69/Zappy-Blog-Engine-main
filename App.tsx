@@ -490,7 +490,27 @@ ${serpIntelligence.paa.map(q => `- ${q.question}`).join('\n')}
                       if (!seoContent) return undefined;
                       try {
                         const jsonMatch = seoContent.match(/\{[\s\S]*\}/);
-                        return jsonMatch ? JSON.parse(jsonMatch[0]) : undefined;
+                        if (jsonMatch) {
+                          // Clean up potential text after the JSON block if it was greedy
+                          let rawJson = jsonMatch[0];
+                          let balance = 0;
+                          let endIndex = -1;
+                          for (let i = 0; i < rawJson.length; i++) {
+                            if (rawJson[i] === '{') balance++;
+                            if (rawJson[i] === '}') {
+                              balance--;
+                              if (balance === 0) {
+                                endIndex = i + 1;
+                                break;
+                              }
+                            }
+                          }
+                          if (endIndex !== -1) {
+                            rawJson = rawJson.substring(0, endIndex);
+                          }
+                          return JSON.parse(rawJson);
+                        }
+                        return undefined;
                       } catch (e) {
                         console.error("Failed to parse SEO JSON:", e);
                         return { score: 0, optimizationTips: ["Analysis unavailable"], suggestedKeywords: [] };
