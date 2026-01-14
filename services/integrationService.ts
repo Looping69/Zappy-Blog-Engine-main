@@ -128,7 +128,7 @@ export const publishToShopify = async (title: string, content: string) => {
 };
 
 export const saveToNeonBackend = async (keyword: string, title: string, content: string, tokens: number) => {
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
   const response = await fetch(`${backendUrl}/api/blogs`, {
     method: 'POST',
     headers: {
