@@ -11,7 +11,7 @@ import {
   DEFAULT_CONTENT_CONFIG,
   BlogHistoryItem
 } from './types';
-import { geminiService } from './services/geminiService';
+import { agentService } from './services/agentService';
 import {
   publishToSanity,
   publishToAirtable,
@@ -43,12 +43,33 @@ const App: React.FC = () => {
   // Settings State with Persistence
   const [agentConfigs, setAgentConfigs] = useState<AgentConfigs>(() => {
     const saved = localStorage.getItem('zappy_agent_configs');
-    return saved ? JSON.parse(saved) : getDefaultAgentConfigs();
+    const defaults = getDefaultAgentConfigs();
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return { ...defaults, ...parsed };
+      } catch (e) {
+        console.error('Failed to parse agent configs:', e);
+      }
+    }
+    return defaults;
   });
 
   const [contentConfig, setContentConfig] = useState<ContentConfig>(() => {
     const saved = localStorage.getItem('zappy_content_config');
-    return saved ? JSON.parse(saved) : DEFAULT_CONTENT_CONFIG;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_CONTENT_CONFIG,
+          ...parsed,
+          localSEO: { ...DEFAULT_CONTENT_CONFIG.localSEO, ...(parsed.localSEO || {}) }
+        };
+      } catch (e) {
+        console.error('Failed to parse content config:', e);
+      }
+    }
+    return DEFAULT_CONTENT_CONFIG;
   });
 
   const [blogHistory, setBlogHistory] = useState<BlogHistoryItem[]>(() => {
@@ -126,7 +147,7 @@ ${serpIntelligence.paa.map(q => `- ${q.question}`).join('\n')}
 
       // 1. Researcher
       setState(prev => ({ ...prev, activeAgents: [AgentId.RESEARCHER] }));
-      const research = await geminiService.runAgentTask(AgentId.RESEARCHER, keyword, searchContext, agentConfigs[AgentId.RESEARCHER]);
+      const research = await agentService.runAgentTask(AgentId.RESEARCHER, keyword, searchContext, agentConfigs[AgentId.RESEARCHER]);
       const researchResponse: AgentResponse = {
         agentId: AgentId.RESEARCHER,
         content: research.content,
@@ -142,7 +163,7 @@ ${serpIntelligence.paa.map(q => `- ${q.question}`).join('\n')}
 
       // 2. Writer
       setState(prev => ({ ...prev, activeAgents: [AgentId.WRITER] }));
-      const draft = await geminiService.runAgentTask(AgentId.WRITER, keyword, currentContext, agentConfigs[AgentId.WRITER], contentConfig);
+      const draft = await agentService.runAgentTask(AgentId.WRITER, keyword, currentContext, agentConfigs[AgentId.WRITER], contentConfig);
       const draftResponse: AgentResponse = {
         agentId: AgentId.WRITER,
         content: draft.content,
@@ -159,7 +180,7 @@ ${serpIntelligence.paa.map(q => `- ${q.question}`).join('\n')}
       // 3. Parallel Agents (Compliance, Enhancer, SEO)
       setState(prev => ({ ...prev, activeAgents: [AgentId.COMPLIANCE, AgentId.ENHANCER, AgentId.SEO] }));
       const parallelTask = async (id: AgentId) => {
-        const result = await geminiService.runAgentTask(id, keyword, currentContext, agentConfigs[id]);
+        const result = await agentService.runAgentTask(id, keyword, currentContext, agentConfigs[id]);
         return {
           agentId: id,
           content: result.content,
@@ -190,7 +211,7 @@ ${serpIntelligence.paa.map(q => `- ${q.question}`).join('\n')}
 
       // 4. Editor
       setState(prev => ({ ...prev, activeAgents: [AgentId.EDITOR] }));
-      const final = await geminiService.runAgentTask(AgentId.EDITOR, keyword, currentContext, agentConfigs[AgentId.EDITOR]);
+      const final = await agentService.runAgentTask(AgentId.EDITOR, keyword, currentContext, agentConfigs[AgentId.EDITOR]);
       const finalResponse: AgentResponse = {
         agentId: AgentId.EDITOR,
         content: final.content,
