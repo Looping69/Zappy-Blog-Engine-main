@@ -2,9 +2,9 @@
 import React from 'react';
 import {
     BlogStructure,
-    BLOG_STRUCTURES,
     ContentConfig
 } from '../types';
+import { BLOG_STRUCTURES } from '../constants/blogStructures';
 
 interface ContentSettingsTabProps {
     contentConfig: ContentConfig;
